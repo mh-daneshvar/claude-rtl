@@ -36,8 +36,7 @@ function applyRTL() {
         }
 
         div[contenteditable="true"], textarea {
-            direction: rtl !important;
-            text-align: right !important;
+            text-align: start !important;
             font-family: 'Vazirmatn', Tahoma, sans-serif !important;
         }
 
@@ -80,14 +79,70 @@ chrome.runtime.onMessage.addListener(({ action }) => {
 // Re-apply stylesheet if Claude's SPA removes it from <head>.
 // Debounced to avoid redundant work on rapid DOM mutations.
 let debounceTimer = null;
-const observer = new MutationObserver(() => {
+
+function processContentEditable() {
+    if (!isContextValid() || !rtlEnabled) return;
+    
+    const contentEditableDiv = document.querySelector('div[contenteditable="true"]');
+    if (contentEditableDiv && !contentEditableDiv.hasAttribute('dir')) {
+        contentEditableDiv.setAttribute('dir', 'auto');
+    }
+}
+
+// Single persistent observer that never disconnects
+const observer = new MutationObserver((mutations) => {
     if (!isContextValid()) {
-        observer.disconnect();
+        // Don't disconnect, just return
         return;
     }
-    if (!rtlEnabled) return;
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(applyRTL, 150);
+    
+    processContentEditable();
+
+    const hasContentEditableAdded = mutations.some(mutation => {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'contenteditable') {
+            return true;
+        }
+        if (mutation.type === 'childList') {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === 1) {
+                    if (node.matches && node.matches('div[contenteditable="true"]')) {
+                        return true;
+                    }
+                    if (node.querySelector && node.querySelector('div[contenteditable="true"]')) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    });
+
+    if (hasContentEditableAdded) {
+        processContentEditable();
+    }
+
+    if (rtlEnabled) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(applyRTL, 150);
+    }
 });
 
-observer.observe(document.body, { childList: true, subtree: true });
+observer.observe(document.documentElement, { 
+    childList: true, 
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['contenteditable', 'dir']
+});
+
+// Also check periodically as a fallback (every 2 seconds, stops after 10 seconds)
+let attempts = 0;
+const interval = setInterval(() => {
+    if (attempts > 5) {
+        clearInterval(interval);
+        return;
+    }
+    processContentEditable();
+    attempts++;
+}, 2000);
+
+setTimeout(processContentEditable, 100);
