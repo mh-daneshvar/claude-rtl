@@ -12,7 +12,6 @@ function updateStatus(isEnabled) {
     }
 }
 
-// خوندن state فعلی
 chrome.storage.local.get('rtlEnabled', ({ rtlEnabled }) => {
     const isEnabled = rtlEnabled !== false;
     toggle.checked = isEnabled;

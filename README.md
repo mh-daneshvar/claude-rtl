@@ -7,6 +7,8 @@ A Chrome extension that makes [claude.ai](https://claude.ai) right-to-left, buil
 ## Features
 
 - RTL layout for all chat messages
+- Mixed Persian/English paragraphs each pick the correct direction automatically (an English sentence inside a Persian reply, or vice versa, is no longer forced right-to-left)
+- Math formulas (KaTeX) always render left-to-right and are isolated from the surrounding RTL text, so operators, parentheses and digits don't get reordered
 - Works during streaming (real-time responses)
 - Code blocks stay left-to-right
 - Toggle on/off via the popup
