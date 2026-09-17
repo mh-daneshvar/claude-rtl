@@ -1,5 +1,5 @@
 const STYLE_ID = 'claude-rtl-style';
-let rtlEnabled = true; // local cache to avoid repeated storage reads
+let rtlEnabled = true;
 
 function isContextValid() {
     try {
@@ -23,21 +23,52 @@ function applyRTL() {
             src: url('${fontURL}') format('woff2');
             font-weight: normal;
         }
-    
-        [data-testid="user-message"],
-        [data-testid="assistant-message"],
-        .font-claude-message,
-        .font-claude-response-body,
-        .standard-markdown,
-        .whitespace-pre-wrap {
+
+        :is(
+            [data-testid="user-message"],
+            [data-testid="assistant-message"],
+            .font-claude-message,
+            .font-claude-response-body,
+            .standard-markdown
+        ) {
             direction: rtl !important;
             text-align: right !important;
             font-family: 'Vazirmatn', Tahoma, sans-serif !important;
         }
 
-        div[contenteditable="true"], textarea {
+        :is(
+            [data-testid="user-message"],
+            [data-testid="assistant-message"],
+            .font-claude-message,
+            .font-claude-response-body,
+            .standard-markdown
+        ) :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dd, dt) {
+            unicode-bidi: plaintext !important;
+            text-align: start !important;
+            font-family: 'Vazirmatn', Tahoma, sans-serif !important;
+        }
+
+        :is(
+            [data-testid="user-message"],
+            [data-testid="assistant-message"],
+            .font-claude-message,
+            .font-claude-response-body,
+            .standard-markdown
+        ) :is(h1, h2, h3, h4, h5, h6),
+        h1[dir="rtl"], h2[dir="rtl"], h3[dir="rtl"], h4[dir="rtl"], h5[dir="rtl"], h6[dir="rtl"] {
+            font-family: 'Vazirmatn', Tahoma, sans-serif !important;
+        }
+
+        .whitespace-pre-wrap {
             direction: rtl !important;
-            text-align: right !important;
+            text-align: start !important;
+            unicode-bidi: plaintext !important;
+            font-family: 'Vazirmatn', Tahoma, sans-serif !important;
+        }
+
+        div[contenteditable="true"], textarea {
+            text-align: start !important;
+            unicode-bidi: plaintext !important;
             font-family: 'Vazirmatn', Tahoma, sans-serif !important;
         }
 
@@ -45,15 +76,45 @@ function applyRTL() {
         .code-block__code * {
             direction: ltr !important;
             text-align: left !important;
+            unicode-bidi: isolate !important;
             font-family: monospace !important;
         }
 
         code.whitespace-pre-wrap {
             direction: ltr !important;
             text-align: left !important;
-            unicode-bidi: embed !important;
+            unicode-bidi: isolate !important;
             display: inline-block !important;
             font-family: monospace !important;
+        }
+
+        :is(.katex, .katex-display, mjx-container, math) {
+            direction: ltr !important;
+            unicode-bidi: isolate !important;
+        }
+
+        .katex-display {
+            display: block !important;
+            text-align: center !important;
+            margin: 0.75em 0 !important;
+        }
+
+        .katex-display > .katex {
+            text-align: center !important;
+        }
+
+        bdi {
+            unicode-bidi: plaintext !important;
+            font-family: 'Vazirmatn', Tahoma, sans-serif !important;
+        }
+
+        :is([data-cds="TurnStatus"], [data-testid="TurnStatus"]) {
+            direction: rtl !important;
+        }
+
+        :is([data-cds="TurnStatus"], [data-testid="TurnStatus"]) :is(bdi, span) {
+            text-align: start !important;
+            font-family: 'Vazirmatn', Tahoma, sans-serif !important;
         }
     `;
     document.head.appendChild(style);
@@ -64,7 +125,6 @@ function removeRTL() {
     if (style) style.remove();
 }
 
-// اجرای اولیه
 if (isContextValid()) {
     chrome.storage.local.get('rtlEnabled', ({ rtlEnabled: val }) => {
         rtlEnabled = val !== false;
@@ -77,17 +137,69 @@ chrome.runtime.onMessage.addListener(({ action }) => {
     if (action === 'disable') { rtlEnabled = false; removeRTL(); }
 });
 
-// Re-apply stylesheet if Claude's SPA removes it from <head>.
-// Debounced to avoid redundant work on rapid DOM mutations.
 let debounceTimer = null;
-const observer = new MutationObserver(() => {
+
+function processContentEditable() {
+    if (!isContextValid() || !rtlEnabled) return;
+
+    const contentEditableDiv = document.querySelector('div[contenteditable="true"]');
+    if (contentEditableDiv && !contentEditableDiv.hasAttribute('dir')) {
+        contentEditableDiv.setAttribute('dir', 'auto');
+    }
+}
+
+const observer = new MutationObserver((mutations) => {
     if (!isContextValid()) {
-        observer.disconnect();
+        // Don't disconnect, just return
         return;
     }
-    if (!rtlEnabled) return;
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(applyRTL, 150);
+
+    processContentEditable();
+
+    const hasContentEditableAdded = mutations.some(mutation => {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'contenteditable') {
+            return true;
+        }
+        if (mutation.type === 'childList') {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === 1) {
+                    if (node.matches && node.matches('div[contenteditable="true"]')) {
+                        return true;
+                    }
+                    if (node.querySelector && node.querySelector('div[contenteditable="true"]')) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    });
+
+    if (hasContentEditableAdded) {
+        processContentEditable();
+    }
+
+    if (rtlEnabled) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(applyRTL, 150);
+    }
 });
 
-observer.observe(document.body, { childList: true, subtree: true });
+observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['contenteditable', 'dir']
+});
+
+let attempts = 0;
+const interval = setInterval(() => {
+    if (attempts > 5) {
+        clearInterval(interval);
+        return;
+    }
+    processContentEditable();
+    attempts++;
+}, 2000);
+
+setTimeout(processContentEditable, 100);
