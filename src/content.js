@@ -42,9 +42,8 @@ function applyRTL() {
             .font-claude-message,
             .font-claude-response-body,
             .standard-markdown
-        ) :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dd, dt) {
-            unicode-bidi: plaintext !important;
-            text-align: start !important;
+        ) :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dd, dt, ul, ol) {
+            unicode-bidi: isolate !important;
             font-family: 'Vazirmatn', Tahoma, sans-serif !important;
         }
 
@@ -54,16 +53,32 @@ function applyRTL() {
             .font-claude-message,
             .font-claude-response-body,
             .standard-markdown
-        ) :is(h1, h2, h3, h4, h5, h6),
-        h1[dir="rtl"], h2[dir="rtl"], h3[dir="rtl"], h4[dir="rtl"], h5[dir="rtl"], h6[dir="rtl"] {
-            font-family: 'Vazirmatn', Tahoma, sans-serif !important;
+        ) :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dd, dt, ul, ol)[dir="rtl"] {
+            direction: rtl !important;
+            text-align: right !important;
+        }
+
+        :is(
+            [data-testid="user-message"],
+            [data-testid="assistant-message"],
+            .font-claude-message,
+            .font-claude-response-body,
+            .standard-markdown
+        ) :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dd, dt, ul, ol)[dir="ltr"] {
+            direction: ltr !important;
+            text-align: left !important;
         }
 
         .whitespace-pre-wrap {
             direction: rtl !important;
-            text-align: start !important;
-            unicode-bidi: plaintext !important;
+            text-align: right !important;
+            unicode-bidi: isolate !important;
             font-family: 'Vazirmatn', Tahoma, sans-serif !important;
+        }
+
+        .whitespace-pre-wrap[dir="ltr"] {
+            direction: ltr !important;
+            text-align: left !important;
         }
 
         div[contenteditable="true"], textarea {
@@ -125,15 +140,48 @@ function removeRTL() {
     if (style) style.remove();
 }
 
+const RTL_CHAR_PATTERN = /[֑-߿יִ-﷿ﹰ-﻿]/;
+
+const DIRECTIONAL_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, dd, dt, ul, ol, .whitespace-pre-wrap:not(code)';
+
+function fixMixedDirection(root) {
+    if (!isContextValid() || !rtlEnabled || !root || !root.querySelectorAll) return;
+
+    const elements = [];
+    if (root.nodeType === 1 && root.matches && root.matches(DIRECTIONAL_SELECTOR)) {
+        elements.push(root);
+    }
+    elements.push(...root.querySelectorAll(DIRECTIONAL_SELECTOR));
+
+    elements.forEach((el) => {
+        const text = el.textContent || '';
+        if (!text.trim()) return;
+
+        const currentDir = el.getAttribute('dir');
+        const wantsRtl = RTL_CHAR_PATTERN.test(text);
+
+        if (wantsRtl && currentDir !== 'rtl') {
+            el.setAttribute('dir', 'rtl');
+        } else if (!wantsRtl && !currentDir) {
+            el.setAttribute('dir', 'ltr');
+        }
+    });
+}
+
+function refresh() {
+    applyRTL();
+    fixMixedDirection(document.body);
+}
+
 if (isContextValid()) {
     chrome.storage.local.get('rtlEnabled', ({ rtlEnabled: val }) => {
         rtlEnabled = val !== false;
-        if (rtlEnabled) applyRTL();
+        if (rtlEnabled) refresh();
     });
 }
 
 chrome.runtime.onMessage.addListener(({ action }) => {
-    if (action === 'enable') { rtlEnabled = true; applyRTL(); }
+    if (action === 'enable') { rtlEnabled = true; refresh(); }
     if (action === 'disable') { rtlEnabled = false; removeRTL(); }
 });
 
@@ -181,7 +229,7 @@ const observer = new MutationObserver((mutations) => {
 
     if (rtlEnabled) {
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(applyRTL, 150);
+        debounceTimer = setTimeout(refresh, 150);
     }
 });
 
