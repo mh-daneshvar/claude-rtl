@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Claude RTL",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "Makes Claude.ai RTL for Persian/Arabic users, with correct math formula and mixed-language rendering",
   "permissions": [
     "activeTab",
